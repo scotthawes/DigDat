@@ -1,0 +1,371 @@
+---
+title: "Lloyds DigDat"
+output: 
+  flexdashboard::flex_dashboard
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+library(esquisse)
+library(dplyr)
+library(ggplot2)
+library(gganimate)
+library(flexdashboard)
+library(readxl)
+library(ggplot2)
+library(RColorBrewer)
+library(maps)
+library(mapproj)
+library(ggplotify)
+library(plotly)
+library(ggthemes)
+
+```
+
+
+
+```{r, echo=FALSE}
+LBG_Step_Up_Data_Set <- read_excel("LBG Step Up Data Set.xlsx")
+
+LBG_Step_Up_Data_Set <- LBG_Step_Up_Data_Set %>%
+  mutate(id = as.character(id)) %>%
+  arrange()
+```
+
+```{r, echo=FALSE}
+## Filter to selected variables
+LBG <- LBG_Step_Up_Data_Set %>%
+  select(id,
+         addr_state,
+         annual_inc,
+         emp_length,
+         home_ownership,
+         installment,
+         loan_amnt,
+         loan_amnt,
+         term, 
+         int_rate,
+         loan_status)%>%
+  mutate(home_ownership = na_if(home_ownership, "ANY")) %>%
+  mutate(home_ownership = na_if(home_ownership, "OTHER"))
+```
+
+```{r, echo=FALSE}
+states <- map_data("state")
+
+US_data <- as_tibble(c("AA Armed Forces America","AE Armed Forces","AK Alaska","AL Alabama",
+                       "AP Armed Forces Pacific","AR Arkansas","AZ Arizona","CA California","CO Colorado",
+                       "CT Connecticut","DC Washington DC","DE Delaware","FL Florida",
+                       "GA Georgia","GU Guam","HI Hawaii","IA Iowa","ID Idaho",
+                       "IL Illinois","IN Indiana","KS Kansas","KY Kentucky","LA Louisiana",
+                       "MA Massachusetts","MD Maryland","ME Maine","MI Michigan","MN Minnesota",
+                       "MO Missouri","MS Mississippi","MT Montana","NC North Carolina",
+                       "ND North Dakota","NE Nebraska","NH New Hampshire","NJ New Jersey",
+                       "NM New Mexico","NV Nevada","NY New York","OH Ohio","OK Oklahoma",
+                       "OR Oregon","PA Pennsylvania","PR Puerto Rico","RI Rhode Island",
+                       "SC South Carolina","SD South Dakota","TN Tennessee","TX Texas",
+                       "UT Utah","VA Virginia","VI Virgin Islands","VT Vermont","WA Washington",
+                       "WI Wisconsin","WV West Virginia","WY Wyoming"))
+
+
+## Key Insert
+US_data$value <- sub("[[:space:]]", "@", US_data$value)  
+
+## Seperate
+US_data <- US_data %>%
+  separate(value, sep = "@", into = c("addr_state","subregion")) %>%
+  mutate(region = "USA")
+
+
+## Left joins
+
+LBG <- left_join(US_data, LBG)
+
+LBG <- LBG %>% 
+  mutate(region = subregion,
+         subregion = NULL) %>%
+  arrange(region)
+  
+
+LBG$region <- tolower(LBG$region)
+
+LBG_short <- LBG %>%
+  group_by(region) %>%
+  summarise(avg.annual_inc = mean(annual_inc),
+            avg.installment = mean(installment),
+            avg.loan_amnt = mean(loan_amnt),
+            avg.int.rate = mean(int_rate),
+            N = n())
+
+#LBG <- left_join(states, LBG)
+
+LBG.geo <- merge(LBG_short, states, sort = FALSE, by = "region")
+LBG.geo <- LBG.geo[order(LBG.geo$order),]
+
+```
+
+```{r, echo=FALSE}
+## Re-order factor
+LBG$emp_length <- gsub("[[:space:]]+year(|s)","", LBG$emp_length)
+LBG$emp_length <- factor(LBG$emp_length,
+                         levels = c("< 1", "1", "2" ,"3" ,
+                                    "4" ,"5" ,"6" ,"7" ,"8" ,
+                                    "9" ,"10+"))
+
+# Any should be removed
+
+LBG$home_ownership <- factor(LBG$home_ownership, 
+                             levels = c("MORTGAGE", "RENT", "OWN",NA))
+
+
+LBG$term <- factor(LBG$term)
+
+LBG$loan_status <- factor(LBG$loan_status, levels = c("Fully Paid","Charged Off"))
+
+LBG$addr_state <- factor(LBG$addr_state)
+
+## Colour Pallette
+my_colors <- c("#48D1CC","#F08080")           
+names(my_colors) <- levels(LBG$loan_status)
+my_scale <- scale_fill_manual(name = "Loan Status", values = my_colors) 
+
+```
+
+This dashboard is made to illustrate the differences in behaviors between those who have fully paid their loan payments and those who required charge offs.
+
+# Page 1 - Introduction
+
+## Geospatial Representation {data-width="500"} {.tabset}
+
+### Housing Count
+
+```{r, fig.height=8, fig.width=5}
+LBG3<-LBG %>%
+         filter(!is.na(loan_status))
+ggplot(LBG3) +
+            aes(x = region) +
+            geom_bar(fill = "#4682B4") +
+            coord_flip() +
+            theme_minimal() +
+  labs(title = "Summary of the regions of participants within this dataset",
+       caption = "Figure 1: A bar to show the distribution of participants within this dataset",
+       x = "Number of Observations",
+       y = "State")
+```
+
+### Loan Status - Location
+
+```{r, fig.height=8, fig.width=5}
+
+LBG_short2 <- LBG%>%
+  filter(!is.na(region)) %>%
+  filter(!is.na(loan_status)) %>%
+  select("addr_state","region","id","loan_status" ) %>%
+  group_by(region) %>%
+  count(region, loan_status) %>%
+  group_by(region,loan_status) %>%
+  summarise(n = sum(n))
+  
+
+ggplot(LBG_short2) +
+ aes(x = region, fill = loan_status, weight = n) +
+ geom_bar() +
+ scale_fill_hue(direction = 1) +
+ coord_flip() +
+ theme_minimal()+
+ theme(legend.position = c(0.8, 0.8)) +
+  labs(title = "Summary of the regions of participants within this dataset",
+       caption = "Figure 2: A bar to show the distribution of loan status with the data",
+       x = "Number of Observations",
+       y = "State")
+```
+
+## Column {data-width="500"} {data-height="150"}
+
+### Chart 2
+
+Welcome to my analysis on Loan Status rates.
+
+This opening page I have decided to visualize this dataset to understand the geographical location of our sample.
+
+Figure 1 illustrates the concentration of our data, the majority of housing information appears to have originated from California with over 2500 data points. A further 4000 data points originate from Texas, New York and Florida.
+
+I enjoyed the process of developing figure 2, a chloropleth map to illustrate these results using color gradient which best shows the geographic spread of the data for those like myself who are not intuitively away of US states. It also shows us that there is no outright pattern from observing geographic location based on the spread of our data.
+
+### Housing Locations {.tabset}
+
+```{r}
+
+ggplot(LBG.geo, aes(long,lat,text = paste("region:", region))) +
+  geom_polygon(aes(group=group, fill = N)) +
+  labs(title = "Geographical location of observations", 
+       subtitle = "Alaska has not been included due to discrepancies in the dataset",
+        caption = "Figure 2: A chloropleth map to show the distribution of participants within this dataset",
+        fill = "Number of \nObservations") +
+        theme_void()+ 
+  theme(legend.key.width = unit(2,"cm"),legend.position="bottom") 
+
+
+```
+
+# Page 2 {data-orientation="rows"}
+
+
+## Geospatial Representation
+
+### Interest Rates Spread
+
+```{r}
+my_colors <- c("#F08080","#48D1CC")           
+names(my_colors) <- levels(LBG$loan_status)
+my_scale <- scale_colour_manual(name = "Loan Status", values = my_colors) 
+
+LBG %>%
+  filter(annual_inc >= 3000L & annual_inc <= 396339L) %>%
+  filter(!is.na(emp_length)) %>%
+  ggplot() +
+  aes(x = emp_length,
+      shape = loan_status, group = loan_status,) +
+  geom_bar(aes(colour = loan_status, fill = loan_status, position= "stack")) +
+  theme_minimal() +
+  labs(
+    title = "Average Interest Rate for Employment Service Length grouped by Loan Status",
+    subtitle = "",
+    caption = "Figure #: A line graph to illustrate the different interest levels depending on the length of service and loan status",
+    x = "Employment Service Length",
+    y = "Average Interest Rate",
+    tag = waiver(),
+    alt = waiver(),
+    alt_insight = waiver())
+```
+-------------------------------------
+### Interest Rates
+
+```{r}
+my_colors <- c("#F08080","#48D1CC")           
+names(my_colors) <- levels(LBG$loan_status)
+my_scale <- scale_colour_manual(name = "Loan Status", values = my_colors)  
+
+LBG %>%
+  filter(annual_inc >= 3000L & annual_inc <= 396339L) %>%
+  filter(!is.na(emp_length)) %>%
+  group_by(emp_length, loan_status) %>%
+  summarise(avg.int_rate = mean(int_rate),
+            avg.loan_amnt = mean(loan_amnt),
+            avg.annual_inc = mean(annual_inc)) %>%
+  ggplot() +
+  aes(x = emp_length, y = avg.int_rate,
+      shape = loan_status, group = loan_status,) +
+  geom_line(aes(colour = loan_status, fill = loan_status, position= "stack")) +
+  geom_point(fill = "#112446") +
+  my_scale +
+  theme_minimal() +
+  labs(
+    title = "Average Interest Rate for Employment Service Length grouped by Loan Status",
+    subtitle = "",
+    caption = "Figure #: A line graph to illustrate the different interest levels depending on the length of service and loan status",
+    x = "Employment Service Length",
+    y = "Average Interest Rate",
+    tag = waiver(),
+    alt = waiver(),
+    alt_insight = waiver())
+```
+
+
+### House Ownership Counts
+
+```{r}
+
+LBG %>%
+  filter(!is.na(emp_length)) %>%
+  filter(!is.na(home_ownership)) %>%
+  ggplot() +
+  aes(x = home_ownership
+      , group = loan_status, fill = loan_status) +
+  geom_bar() +
+  theme_minimal() +
+  labs(
+  title = "Housing Ownership Count grouped by Loan Status",
+  subtitle = "",
+  caption = "Figure ##",
+  tag = waiver(),
+  alt = waiver(),
+  alt_insight = waiver(),
+  x = "House Ownership Status",
+  y= "Number of Observations",
+  fill = "Loan Status"
+) 
+  #my_scale
+```
+
+# Page 3 {data-orientation="rows"}
+
+### Loan Amounts
+
+```{r}
+LBG %>%
+  filter(annual_inc >= 3000L & annual_inc <= 396339L) %>%
+  filter(!is.na(emp_length)) %>%
+  group_by(emp_length, loan_status) %>%
+  summarise(avg.loan_amnt = mean(loan_amnt)) %>%
+  ggplot() +
+  aes(x = emp_length, y = avg.loan_amnt, 
+      shape = loan_status, group = loan_status) +
+  geom_point(fill = "#112446") +
+  geom_line(aes(colour = loan_status, position= "stack")) +
+  theme_minimal() +
+  labs(
+  title = 
+    "Average Loan Amounts for Employment Service Length grouped by Loan Status",
+    subtitle = "",
+    caption = 
+    "The graph above illustrates the different Loan Amounts depending on the length of service.Additionally, the graph also shows the individuals loan status.",
+  x = "Employment Service Length",
+  y = "Average Loan Amount",
+  tag = waiver(),
+  alt = waiver(),
+  alt_insight = waiver(),
+  x = "Employment Service Length",
+  y= "Average Loan Amount",
+  fill = "Loan Status",
+  shape = ""
+  ) +
+  my_scale
+```
+
+### Yes
+
+## Column
+
+### Annual Income
+
+```{r}
+LBG %>%
+  filter(annual_inc >= 3000L & annual_inc <= 396339L) %>%
+  filter(!is.na(emp_length)) %>%
+  group_by(emp_length, loan_status) %>%
+    summarise(avg.annual_inc = mean(annual_inc)) %>%
+  ggplot() +
+  aes(x = emp_length, y = avg.annual_inc,
+      shape = loan_status, group = loan_status) +
+  geom_point(fill = "#112446") +
+  theme_minimal() +
+  geom_line(aes(colour = loan_status, position= "stack")) +
+  labs(
+  title = "Average Annual Income for Employment Service Length grouped by Loan Status",
+  subtitle = "",
+  caption = "The graph above illustrates the different Annual Income depending on the length of service. Additionally, the graph also shows the individuals loan status.",
+  tag = waiver(),
+  alt = waiver(),
+  alt_insight = waiver(),
+  x = "Employment Service Length",
+  y= "Average Annual Income",
+  fill = "Loan Status",
+  shape = ""
+) +
+  my_scale
+```
+
+### yes
